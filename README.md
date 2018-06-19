@@ -14,6 +14,8 @@ _This is still in beta_, the blaze powder must be put manually into the brewing 
 - At least 384k of RAM
 - An installation of OpenOS
 
+The client must have the "client.lua" and "ui.lua" files in the same drectory
+
 ### Robots (x2)
 - 1x EEPROM Lua BIOS
 - 1x CPU (Tier 1 should be enough)
