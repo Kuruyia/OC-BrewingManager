@@ -1,7 +1,5 @@
 local bRun = true
-local tPotionsName = {["night_vision"] = "Night Vision", ["invisibility"] = "Invisibility", ["fire_resistance"] = "Fire Resistance", ["leaping"] = "Leaping", ["slowness"] = "Slowness", ["swiftness"] = "Swiftness", ["water_breathing"] = "Water Breathing", ["healing"] = "Healing", ["harming"] = "Harming", ["poison"] = "Poison", ["regeneration"] = "Regeneration", ["strength"] = "Strength", ["weakness"] = "Weakness"}
 local tPotionsIndex = {{["name"] = "Night Vision", ["id"] = "night_vision", ["glowstone"] = false, ["redstone"] = true}, {["name"] = "Invisibility", ["id"] = "invisibility", ["glowstone"] = false, ["redstone"] = true}, {["name"] = "Fire Resistance", ["id"] = "fire_resistance", ["glowstone"] = false, ["redstone"] = true}, {["name"] = "Leaping", ["id"] = "leaping", ["glowstone"] = true, ["redstone"] = true}, {["name"] = "Slowness", ["id"] = "slowness", ["glowstone"] = false, ["redstone"] = true}, {["name"] = "Swiftness", ["id"] = "swiftness", ["glowstone"] = true, ["redstone"] = true}, {["name"] = "Water Breathing", ["id"] = "water_breathing", ["glowstone"] = false, ["redstone"] = true}, {["name"] = "Healing", ["id"] = "healing", ["glowstone"] = true, ["redstone"] = false}, {["name"] = "Harming", ["id"] = "harming", ["glowstone"] = true, ["redstone"] = false}, {["name"] = "Poison", ["id"] = "poison", ["glowstone"] = true, ["redstone"] = true}, {["name"] = "Regeneration", ["id"] = "regeneration", ["glowstone"] = true, ["redstone"] = true}, {["name"] = "Strength", ["id"] = "strength", ["glowstone"] = true, ["redstone"] = true}, {["name"] = "Weakness", ["id"] = "weakness", ["glowstone"] = false, ["redstone"] = true}}
-local tIngredientName = {["minecraft:nether_wart"] = "Nether Wart", ["minecraft:gunpowder"] = "Gunpowder", ["minecraft:spider_eye"] = "Spider Eye", ["minecraft:blaze_powder"] = "Blaze Powder", ["minecraft:ghast_tear"] = "Ghast Tear", ["minecraft:redstone"] = "Redstone", ["minecraft:speckled_melon"] = "Glistering Melon", ["minecraft:rabbit_foot"] = "Rabbit's Foot", ["minecraft:sugar"] = "Sugar", ["minecraft:magma_cream"] = "Magma Cream", ["minecraft:glowstone"] = "Glowstone", ["minecraft:fermented_spider_eye"] = "Fermented Spider Eye"}
 
 local tQueue = {}
 local nState = 0
@@ -27,31 +25,53 @@ local function modemMessageHandler(_, local_address, remote_address, port, dista
   if msg[1] == "updateState" then
   	tQueue = serialization.unserialize(msg[2])
   	nState = tonumber(msg[3])
+  	tData = serialization.unserialize(msg[4])
 
-  	tQueue = {}
-  	for i = 1, 64 do
-  		table.insert(tQueue, {["name"] = "invisibility"})
+  	if nState == 4 then
+  		for i = 1, #tData do
+  			tData[i] = not tData[i]
+  		end
   	end
 
-  	ui.setList(tQueue)
+  	ui.setList(tQueue, nState, table.unpack(tData))
+  elseif msg[1] == "updateLevelsState" then
+   	ui.setGlassBottleLevel(msg[2], msg[3])
+  	ui.setBlazePowderLevel(msg[4], msg[5])
   elseif msg[1] == "potionFinished" then
   	table.remove(tQueue, 1)
-  	ui.setList(tQueue)
 
   	if #tQueue == 0 then
   		nState = 0
   	end
+
+  	ui.setList(tQueue, nState)
   elseif msg[1] == "potionRemoved" then
   	table.remove(tQueue, tonumber(msg[2]))
-  	ui.setList(tQueue)
+  	ui.setList(tQueue, nState)
   elseif msg[1] == "notifyMissingIngredient" then
   	nState = 2
-  	ui.updateListHeader(tQueue, nState)
+  	ui.drawListHeader(tQueue, nState)
   elseif msg[1] == "notifyIngredient" then
   	nState = 1
   	table.remove(tQueue[1]["ingredients"], 1)
 
-  	ui.updateListHeader(tQueue, nState)
+  	ui.drawListHeader(tQueue, nState)
+  elseif msg[1] == "notifyQuantityDecreased" then
+  	tQueue[1]["quantity"] = tQueue[1]["quantity"] - 1
+
+  	ui.setList(tQueue, nState)
+  elseif msg[1] == "wantsVerification" then
+  	nState = 3
+
+  	ui.drawListHeader(tQueue, nState)
+  elseif msg[1] == "verification" then
+  	if msg[2] and msg[3] then
+  		nState = 1
+  	else
+  		nState = 4
+  	end
+
+  	ui.drawListHeader(tQueue, nState, not msg[2], not msg[3])
   end
 end
 

@@ -8,6 +8,7 @@ local gpu = component.gpu
 local w, h = gpu.getResolution()
 local tPotionsName = {["night_vision"] = "Night Vision", ["invisibility"] = "Invisibility", ["fire_resistance"] = "Fire Resistance", ["leaping"] = "Leaping", ["slowness"] = "Slowness", ["swiftness"] = "Swiftness", ["water_breathing"] = "Water Breathing", ["healing"] = "Healing", ["harming"] = "Harming", ["poison"] = "Poison", ["regeneration"] = "Regeneration", ["strength"] = "Strength", ["weakness"] = "Weakness"}
 local tPotionsIndex = {{["name"] = "Night Vision", ["id"] = "night_vision", ["glowstone"] = false, ["redstone"] = true}, {["name"] = "Invisibility", ["id"] = "invisibility", ["glowstone"] = false, ["redstone"] = true}, {["name"] = "Fire Resistance", ["id"] = "fire_resistance", ["glowstone"] = false, ["redstone"] = true}, {["name"] = "Leaping", ["id"] = "leaping", ["glowstone"] = true, ["redstone"] = true}, {["name"] = "Slowness", ["id"] = "slowness", ["glowstone"] = false, ["redstone"] = true}, {["name"] = "Swiftness", ["id"] = "swiftness", ["glowstone"] = true, ["redstone"] = true}, {["name"] = "Water Breathing", ["id"] = "water_breathing", ["glowstone"] = false, ["redstone"] = true}, {["name"] = "Healing", ["id"] = "healing", ["glowstone"] = true, ["redstone"] = false}, {["name"] = "Harming", ["id"] = "harming", ["glowstone"] = true, ["redstone"] = false}, {["name"] = "Poison", ["id"] = "poison", ["glowstone"] = true, ["redstone"] = true}, {["name"] = "Regeneration", ["id"] = "regeneration", ["glowstone"] = true, ["redstone"] = true}, {["name"] = "Strength", ["id"] = "strength", ["glowstone"] = true, ["redstone"] = true}, {["name"] = "Weakness", ["id"] = "weakness", ["glowstone"] = false, ["redstone"] = true}}
+local tIngredientName = {["minecraft:nether_wart"] = "Nether Wart", ["minecraft:gunpowder"] = "Gunpowder", ["minecraft:spider_eye"] = "Spider Eye", ["minecraft:blaze_powder"] = "Blaze Powder", ["minecraft:ghast_tear"] = "Ghast Tear", ["minecraft:redstone"] = "Redstone", ["minecraft:speckled_melon"] = "Glistering Melon", ["minecraft:rabbit_foot"] = "Rabbit's Foot", ["minecraft:sugar"] = "Sugar", ["minecraft:magma_cream"] = "Magma Cream", ["minecraft:glowstone"] = "Glowstone", ["minecraft:fermented_spider_eye"] = "Fermented Spider Eye", ["minecraft:golden_carrot"] = "Golden Carrot"}
 local listOffset = 0
 
 local closeHandler, potionRemoveHandler, potionSelectedHandler, flagHandler, quantityHandler, confirmHandler, listScrollHandler
@@ -36,7 +37,9 @@ local function drawWindow()
 	term.write("X")
 end
 
-function ui.drawListHeader(list, state)
+function ui.drawListHeader(list, state, ...)
+	local data = {...}
+
 	term.setCursor(2, 3)
   	gpu.setForeground(0x000000)
   	gpu.setBackground(0xFFFFFF)
@@ -45,8 +48,10 @@ function ui.drawListHeader(list, state)
   
   	term.write("Queue: "..#list)
 
-  	if state == 2 then
-  		local currentIngredient = list[1]["ingredients"][1]
+  	if state == 1 then
+  		term.write(" - Brewing")
+  	elseif state == 2 then
+  		local currentIngredient = list[1]["ingredientsLeft"][1]
   		local ingredientStr = ""
 
   		if type(currentIngredient) == "string" then
@@ -60,10 +65,22 @@ function ui.drawListHeader(list, state)
 
   		gpu.setForeground(0xFF0000)
   		term.write(" - Missing ingredient: "..ingredientStr)
+  	elseif state == 3 then
+  		term.write(" - Verifying")
+  	elseif state == 4 then
+  		gpu.setForeground(0xFF0000)
+
+  		if data[1] and data[2] then
+  			term.write(" - Missing Glass Bottle and Blaze Powder")
+  		elseif data[1] and not data[2] then
+  			term.write(" - Missing Glass Bottle")
+  		elseif not data[1] and data[2] then
+  			term.write(" - Missing Blaze Powder")
+  		end
   	end
 end
 
-local function drawList(list, state, from)
+local function drawList(list, state, from, ...)
 	if from > #list - h - 4 then
 		from = #list - h - 4
 	end
@@ -72,9 +89,7 @@ local function drawList(list, state, from)
 	end
 	listOffset = from - 1
 
-	if state then
-		ui.drawListHeader(list, state)
-	end
+	ui.drawListHeader(list, state, ...)
 
 	gpu.setBackground(0x0092FF)
 	drawRectangle(2, 4, w / 2 - 1, h - 1)
@@ -92,7 +107,7 @@ local function drawList(list, state, from)
   	gpu.setBackground(0x0092FF)
   	for i = 1, #list do
   		term.setCursor(2, 4 + i - 1)
-  		term.write(tPotionsName[list[i + listOffset]["name"]])
+  		term.write(tPotionsName[list[i + listOffset]["name"]].." x"..list[i + listOffset]["quantity"])
 
   		if i + listOffset > 1 then
   			gpu.setBackground(0xFF0000)
@@ -198,6 +213,29 @@ local function drawNumericUpDown()
 	term.write("+")
 end
 
+local function drawProgressBar(text, value, maxValue, posX, posY, endX)
+	gpu.setBackground(0xFFFFFF)
+	gpu.setForeground(0x000000)
+
+	drawRectangle(posX, posY, endX, posY)
+	term.setCursor(posX, posY)
+	term.write(text.." - ")
+
+	if value == -1 then
+		term.write("N/A")
+	else
+		term.write(value)
+	end
+
+	local nBarWidth = value * (endX - posX) / maxValue
+
+	gpu.setBackground(0x0092FF)
+	drawRectangle(posX, posY + 1, endX, posY + 1)
+
+	gpu.setBackground(0x00DBFF)
+	drawRectangle(posX, posY + 1, nBarWidth + posX, posY + 1)
+end
+
 local function touchHandler(_, screen_address, x, y, button, player_name)
 	if x >= w - 4 and x <= w and y == 1 then
 		closeHandler()
@@ -246,6 +284,14 @@ function ui.updateNumericUpDownText(qty)
 	term.write(qty)
 end
 
+function ui.setBlazePowderLevel(level, maxLevel)
+	drawProgressBar("Blaze Powder", level, maxLevel, w / 2 + 5, 43, w - 4)
+end
+
+function ui.setGlassBottleLevel(level, maxLevel)
+	drawProgressBar("Glass Bottle", level, maxLevel, w / 2 + 5, 40, w - 4)
+end
+
 function ui.setupInterface()
 	drawWindow()
 	drawList({}, 0, 1)
@@ -254,6 +300,9 @@ function ui.setupInterface()
 	drawConfirmButton()
 	drawNumericUpDown()
 	ui.updateNumericUpDownText(1)
+
+	ui.setGlassBottleLevel(-1, 0)
+	ui.setBlazePowderLevel(-1, 0)
 
 	event.listen("touch", touchHandler)
 end
@@ -297,8 +346,8 @@ function ui.scrollListUp(list)
 	drawList(list, nil, listOffset)
 end
 
-function ui.setList(list)
-	drawList(list, nil, listOffset + 1)
+function ui.setList(list, state, ...)
+	drawList(list, state, listOffset + 1, ...)
 end
 
 function ui.setCloseHandler(func)

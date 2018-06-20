@@ -2,12 +2,16 @@ local bRun = true
 local tQueue = {}
 local tPotions = {["night_vision"] = "minecraft:golden_carrot", ["invisibility"] = {"minecraft:golden_carrot", "minecraft:fermented_spider_eye"}, ["fire_resistance"] = "minecraft:magma_cream", ["leaping"] = "minecraft:rabbit_foot", ["slowness"] = {{"minecraft:rabbit_foot", "minecraft:fermented_spider_eye"}, {"minecraft:sugar", "minecraft:fermented_spider_eye"}}, ["swiftness"] = "minecraft:sugar", ["water_breathing"] = "minecraft:fish", ["healing"] = "minecraft:speckled_melon", ["harming"] = {{"minecraft:speckled_melon", "minecraft:fermented_spider_eye"}, {"minecraft:spider_eye", "minecraft:fermented_spider_eye"}}, ["poison"] = "minecraft:spider_eye", ["regeneration"] = "minecraft:ghast_tear", ["strength"] = "minecraft:blaze_powder", ["weakness"] = "minecraft:fermented_spider_eye"}
 local nState = 0
+local tMissingComponents = {}
 
 --[[
   States:
   0 = idle
   1 = brewing
   2 = missing ingredient
+  3 = querying brewing stand status
+  4 = missing brewing stand component
+  5 = potion has finished
 ]]
 
 local component = require("component")
@@ -19,6 +23,21 @@ local net_card = component.modem
 local inv_controller = component.inventory_controller
 local robot = component.robot
 net_card.open(4000)
+
+local function deepcopy(orig)
+    local orig_type = type(orig)
+    local copy
+    if orig_type == 'table' then
+        copy = {}
+        for orig_key, orig_value in next, orig, nil do
+            copy[deepcopy(orig_key)] = deepcopy(orig_value)
+        end
+        setmetatable(copy, deepcopy(getmetatable(orig)))
+    else -- number, string, boolean, etc
+        copy = orig
+    end
+    return copy
+end
 
 local function drop(slot, side)
   robot.select(slot)
@@ -201,41 +220,60 @@ local function modemMessageHandler(_, local_address, remote_address, port, dista
   		end
 
       local hasGlowstone = bit32.band(modifier, 1) ~= 0
-        local hasRedstone = bit32.band(modifier, 2) ~= 0
-        local hasSplash = bit32.band(modifier, 4) ~= 0
-        local hasLingering = bit32.band(modifier, 8) ~= 0
+      local hasRedstone = bit32.band(modifier, 2) ~= 0
+      local hasSplash = bit32.band(modifier, 4) ~= 0
+      local hasLingering = bit32.band(modifier, 8) ~= 0
 
-        local flagStr = "Flags: "
-        if hasGlowstone then
-          flagStr = flagStr.."G"
-          table.insert(tPotion, "minecraft:glowstone")
-        end
-        if hasRedstone and not hasGlowstone then
-          flagStr = flagStr.."R"
-          table.insert(tPotion, "minecraft:redstone")
-        end
-        if hasSplash and not hasLingering then
-          flagStr = flagStr.."S"
-          table.insert(tPotion, "minecraft:gunpowder")
-        end
-        if hasLingering then
-          flagStr = flagStr.."L"
-          table.insert(tPotion, "minecraft:gunpowder")
-          table.insert(tPotion, "minecraft:dragon_breath")
-        end
-        print(flagStr)
-
-      for i = 1, qty do
-        table.insert(tQueue, {["ingredients"] = tPotion, ["name"] = potion})
+      local flagStr = "Flags: "
+      if hasGlowstone then
+        flagStr = flagStr.."G"
+        table.insert(tPotion, "minecraft:glowstone")
       end
+      if hasRedstone and not hasGlowstone then
+        flagStr = flagStr.."R"
+        table.insert(tPotion, "minecraft:redstone")
+      end
+      if hasSplash and not hasLingering then
+        flagStr = flagStr.."S"
+        table.insert(tPotion, "minecraft:gunpowder")
+      end
+      if hasLingering then
+        flagStr = flagStr.."L"
+        table.insert(tPotion, "minecraft:gunpowder")
+        table.insert(tPotion, "minecraft:dragon_breath")
+      end
+      print(flagStr)
+
+      table.insert(tQueue, {["ingredients"] = tPotion, ["ingredientsLeft"] = deepcopy(tPotion), ["name"] = potion, ["isReady"] = false, ["quantity"] = qty})
   	end
   elseif msg[1] == "getState" then
-    net_card.broadcast(4000, "updateState", serialization.serialize(tQueue), nState)
+    local tData = {}
+
+    if nState == 4 then
+      tData = tMissingComponents
+    end
+
+    net_card.broadcast(4000, "updateState", serialization.serialize(tQueue), nState, serialization.serialize(tData))
   elseif msg[1] == "removePotion" then
     local potionToRemove = tonumber(msg[2])
     if potionToRemove and tQueue[potionToRemove] then
       table.remove(tQueue, potionToRemove)
       net_card.broadcast(4000, "potionRemoved", potionToRemove)
+    end
+  elseif msg[1] == "verification" then
+    print("Verification received")
+    if nState == 3 or nState == 4 then
+      local tPotionToDo = tQueue[1]
+
+      if tPotionToDo and not tPotionToDo["ready"] then
+        if msg[2] and msg[3] then
+          tPotionToDo["ready"] = true
+          nState = 1
+        else
+          nState = 4
+          tMissingComponents = {msg[2], msg[3]}
+        end
+      end
     end
   else
   	print(msg[1])
@@ -265,24 +303,49 @@ while bRun do
     if not inv_controller.getStackInSlot(sides.bottom, 1) then
       while true do
         local tPotionToDo = tQueue[1]
+        print("Current state: "..nState)
 
         if not tPotionToDo then
           nState = 0
           break
         end
 
-        if #tPotionToDo["ingredients"] == 0 then
+        if nState == 3 or nState == 4 then
+          break
+        end
+
+        if #tPotionToDo["ingredientsLeft"] == 0 and tPotionToDo["quantity"] == 1 then
           table.remove(tQueue, 1)
           net_card.broadcast(4000, "potionFinished")
+
+          nState = 5
+          print("Finished!")
         else
-          local currentIngredient = tPotionToDo["ingredients"][1]
+          if #tPotionToDo["ingredientsLeft"] == 0 and tPotionToDo["quantity"] > 1 then
+            tPotionToDo["quantity"] = tPotionToDo["quantity"] - 1
+            tPotionToDo["ingredientsLeft"] = deepcopy(tPotionToDo["ingredients"])
+            tPotionToDo["ready"] = false
+
+            net_card.broadcast(4000, "notifyQuantityDecreased")
+
+            nState = 5
+          end
+
+          if not tPotionToDo["isReady"] and (nState == 5 or nState == 0) then
+            net_card.broadcast(4000, "wantsVerification")
+            nState = 3
+
+            break
+          end
+
+          local currentIngredient = tPotionToDo["ingredientsLeft"][1]
 
           if type(currentIngredient) == "string" then
             if (putIngredient(currentIngredient)) then
               net_card.broadcast(4000, "notifyIngredient")
 
               nState = 1
-              table.remove(tQueue[1]["ingredients"], 1)
+              table.remove(tQueue[1]["ingredientsLeft"], 1)
             else
               if nState ~= 2 then
                 nState = 2
@@ -309,7 +372,7 @@ while bRun do
               net_card.broadcast(4000, "notifyIngredient")
 
               nState = 1
-              table.remove(tQueue[1]["ingredients"], 1)
+              table.remove(tQueue[1]["ingredientsLeft"], 1)
             else
               if nState ~= 2 then
                 nState = 2

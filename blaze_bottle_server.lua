@@ -1,5 +1,9 @@
 local bRun = true
 local tQueue = {}
+local bIsReady = false
+local bWantsVerification = false
+local bNeedsBottle = false
+local bNeedsBlaze = false
 
 local component = require("component")
 local event = require("event")
@@ -188,7 +192,7 @@ local function gatherPotions()
 			table.insert(tEmptySlots, i)
 
 			if #tEmptySlots >= nGatheredPotions then
-				break;
+				break
 			end
 		end
 	end
@@ -212,13 +216,156 @@ local function isPotionExisting(potion)
 	return false
 end
 
+local function doesChestHaveGlassBottle()
+	for i = 1, inv_controller.getInventorySize(sides.bottom) do
+		local tCurrentItem = inv_controller.getStackInSlot(sides.bottom, i)
+
+		if tCurrentItem and tCurrentItem.name == "minecraft:glass_bottle" then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function doesChestHaveBlazePowder()
+	for i = 1, inv_controller.getInventorySize(sides.top) do
+		local tCurrentItem = inv_controller.getStackInSlot(sides.top, i)
+
+		if tCurrentItem and tCurrentItem.name == "minecraft:blaze_powder" then
+			return true
+		end
+	end
+
+	return false
+end
+
+local function fillBlazePowder()
+	local tBlazeSlots = {}
+	local nTotalQuantity = 0
+
+	for i = 1, inv_controller.getInventorySize(sides.top) do
+		local tCurrentItem = inv_controller.getStackInSlot(sides.top, i)
+
+		if tCurrentItem and tCurrentItem.name == "minecraft:blaze_powder" then
+			local nQuantity = tCurrentItem.size
+
+			if nQuantity + nTotalQuantity > 64 then
+				nQuantity = 64 - nTotalQuantity
+			end
+			nTotalQuantity = nTotalQuantity + nQuantity
+
+			table.insert(tBlazeSlots, {["slot"] = i, ["quantity"] = nQuantity})
+		end
+	end
+
+	if #tBlazeSlots == 0 then
+		return false
+	end
+
+	for i = 1, #tBlazeSlots do
+		inv_controller.suckFromSlot(sides.top, tBlazeSlots[i]["slot"], tBlazeSlots[i]["quantity"])
+	end
+
+	inv_controller.dropIntoSlot(sides.front, 4)
+
+	return true
+end
+
+local function hasEnoughGlassBottles()
+	if inv_controller.getStackInSlot(sides.front, 1) or inv_controller.getStackInSlot(sides.front, 2) or inv_controller.getStackInSlot(sides.front, 3) then
+		return true
+	else
+		bNeedsBottle = true
+		return false
+	end
+end
+
+local function hasEnoughBlazePowder()
+	if inv_controller.getStackInSlot(sides.front, 4) then
+		return true
+	else
+		if not fillBlazePowder() then
+			bNeedsBlaze = true
+			return false
+		else
+			return true
+		end
+	end
+end
+
+local function ready()
+	print("Ready")
+	bIsReady = true
+
+	if bWantsVerification then
+		net_card.broadcast(4000, "verification", hasEnoughGlassBottles(), hasEnoughBlazePowder())
+	end
+end
+
+local function countBlazePowderLevel()
+	local nItemCount = 0
+	local nInvSize = inv_controller.getInventorySize(sides.top)
+	local nTotalCount = nInvSize * 64
+
+	for i = 1, nInvSize do
+		local tCurrentItem = inv_controller.getStackInSlot(sides.top, i)
+
+		if tCurrentItem and tCurrentItem.name == "minecraft:blaze_powder" then
+			nItemCount = nItemCount + tCurrentItem.size
+		end
+	end
+
+	return nItemCount, nTotalCount
+end
+
+local function countGlassBottleLevel()
+	local nItemCount = 0
+	local nInvSize = inv_controller.getInventorySize(sides.bottom)
+	local nTotalCount = nInvSize * 64
+
+	for i = 1, nInvSize do
+		local tCurrentItem = inv_controller.getStackInSlot(sides.bottom, i)
+
+		if tCurrentItem and tCurrentItem.name == "minecraft:glass_bottle" then
+			nItemCount = nItemCount + tCurrentItem.size
+		end
+	end
+
+	return nItemCount, nTotalCount
+end
+
+local function sendItemLevels()
+	local nGlassLevel, nMaxGlass = countGlassBottleLevel()
+  	local nBlazeLevel, nMaxBlaze = countBlazePowderLevel()
+
+  	net_card.broadcast(4000, "updateLevelsState", nGlassLevel, nMaxGlass, nBlazeLevel, nMaxBlaze)
+end
+
 local function modemMessageHandler(_, local_address, remote_address, port, distance, ...)
   local msg = {...}
 
-  if msg[1] == "potionFinished" then
+  if msg[1] == "potionFinished" or msg[1] == "notifyQuantityDecreased" then
   	print("Potion finished")
+  	bIsReady = false
+
   	gatherPotions()
-  	fillGlassBottle()
+  	if doesChestHaveGlassBottle() then
+  		fillGlassBottle()
+  	else
+  		bNeedsBottle = true
+  	end
+
+  	ready()
+  	sendItemLevels()
+  elseif msg[1] == "wantsVerification" then
+  	if bIsReady then
+  		net_card.broadcast(4000, "verification", hasEnoughGlassBottles(), hasEnoughBlazePowder())
+  	else
+  		bWantsVerification = true
+  	end
+  elseif msg[1] == "getState" then
+  	sendItemLevels()
   else
   	print(msg[1])
   end
@@ -240,8 +387,37 @@ event.listen("key_down", keyDownHandler)
 
 findPosition()
 clearInventory()
-print("Ready!")
+
+ready()
 
 while bRun do
 	os.sleep(1)
+
+	if bNeedsBottle or bNeedsBlaze then
+		local bHasChanged = false
+
+		if bNeedsBottle then
+			print("Check for bottles...")
+			if doesChestHaveGlassBottle() then
+				bNeedsBottle = false
+				bHasChanged = true
+
+				fillGlassBottle()
+			end
+		end
+
+		if bNeedsBlaze then
+			print("Check for blaze...")
+			if doesChestHaveBlazePowder() then
+				bNeedsBlaze = false
+				bHasChanged = true
+
+				fillBlazePowder()
+			end
+		end
+
+		if bHasChanged then
+			net_card.broadcast(4000, "verification", not bNeedsBottle, not bNeedsBlaze)
+		end
+	end
 end
