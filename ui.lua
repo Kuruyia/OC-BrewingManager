@@ -77,6 +77,9 @@ function ui.drawListHeader(list, state, ...)
   		elseif not data[1] and data[2] then
   			term.write(" - Missing Blaze Powder")
   		end
+  	elseif state == 10 then
+  		gpu.setForeground(0xFF0000)
+  		term.write(" - The Brewing Stand seems to be stuck")
   	end
 end
 
@@ -232,8 +235,10 @@ local function drawProgressBar(text, value, maxValue, posX, posY, endX)
 	gpu.setBackground(0x0092FF)
 	drawRectangle(posX, posY + 1, endX, posY + 1)
 
-	gpu.setBackground(0x00DBFF)
-	drawRectangle(posX, posY + 1, nBarWidth + posX, posY + 1)
+	if nBarWidth > 0 then
+		gpu.setBackground(0x00DBFF)
+		drawRectangle(posX, posY + 1, nBarWidth + posX, posY + 1)
+	end
 end
 
 local function touchHandler(_, screen_address, x, y, button, player_name)
@@ -284,12 +289,21 @@ function ui.updateNumericUpDownText(qty)
 	term.write(qty)
 end
 
+function ui.setGlassBottleLevel(level, maxLevel)
+	drawProgressBar("Glass Bottle", level, maxLevel, w / 2 + 5, 40, w - 4)
+end
+
 function ui.setBlazePowderLevel(level, maxLevel)
 	drawProgressBar("Blaze Powder", level, maxLevel, w / 2 + 5, 43, w - 4)
 end
 
-function ui.setGlassBottleLevel(level, maxLevel)
-	drawProgressBar("Glass Bottle", level, maxLevel, w / 2 + 5, 40, w - 4)
+function ui.setRemainingTime(level)
+	drawProgressBar("Remaining Time", level, 400, w / 2 + 5, 46, w - 4)
+end
+
+function ui.clearRemainingTime()
+	gpu.setBackground(0xFFFFFF)
+	drawRectangle(w / 2 + 5, 46, w - 4, 47)
 end
 
 function ui.setupInterface()

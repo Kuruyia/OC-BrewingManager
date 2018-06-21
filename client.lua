@@ -3,6 +3,7 @@ local tPotionsIndex = {{["name"] = "Night Vision", ["id"] = "night_vision", ["gl
 
 local tQueue = {}
 local nState = 0
+local nStuckTimer = 0
 
 local nSelectedButton = {["buttonNumber"] = 0, ["column"] = 0, ["line"] = 0, ["glowstone"] = false, ["redstone"] = false, ["splash"] = false, ["lingering"] = false, ["quantity"] = 1}
 
@@ -15,6 +16,7 @@ local serialization = require("serialization")
 local ui = dofile("ui.lua")
 local net_card = component.modem
 local gpu = component.gpu
+local brewingStand
 net_card.open(4000)
 
 local w, h = gpu.getResolution()
@@ -75,16 +77,38 @@ local function modemMessageHandler(_, local_address, remote_address, port, dista
   end
 end
 
+local function componentAddedHandler(_, address, component_type)
+	if not brewingStand and component_type == "brewing_stand" then
+		brewingStand = component.proxy(address)
+		ui.setRemainingTime(brewingStand.getBrewTime())
+	end
+end
+
+local function componentRemovedHandler(_, address, component_type)
+	if brewingStand and brewingStand.address == address then
+		brewingStand = nil
+		ui.clearRemainingTime()
+	end
+end
+
 event.listen("modem_message", modemMessageHandler)
+event.listen("component_added", componentAddedHandler)
+event.listen("component_removed", componentRemovedHandler)
 
 net_card.broadcast(4000, "getState")
 
 ui.setupInterface()
 
+if component.isAvailable("brewing_stand") then
+	brewingStand = component.brewing_stand
+end
+
 ui.setCloseHandler(function()
 	bRun = false
 	
 	event.ignore("modem_message", modemMessageHandler)
+	event.ignore("component_added", componentAddedHandler)
+	event.ignore("component_removed", componentRemovedHandler)
 	net_card.close(4000)
 
 	ui.close()
@@ -197,5 +221,19 @@ ui.setListScrollHandler(function(direction)
 end)
 
 while bRun do
+	if brewingStand then
+		ui.setRemainingTime(brewingStand.getBrewTime())
+	end
+
+	if nState == 0 and #tQueue > 0 then
+		if nStuckTimer > 2 then
+			ui.drawListHeader(tQueue, 10)
+		else
+			nStuckTimer = nStuckTimer + 1
+		end
+	elseif nStuckTimer > 0 then
+		nStuckTimer = 0
+	end
+
 	os.sleep(1)
 end

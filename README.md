@@ -44,8 +44,6 @@ The "Autobot" robot must be facing the chest and has the "ingredient_server.lua"
 ![All layers](https://preview.ibb.co/iKhuqo/2018_05_21_15_24_35.png)
 
 # To-Do List
-- Use the adapter
-- Adapter: check if there's a potion in the queue and the brewing time returned by the adapter hasn't changed in one second to detect if the brewing stand is stuck (if the ingredient can't be brewed into the potions)
 - Support Tier 2 screen/GPU
 - If present, use the Geolyzer in the robot to find position
 
