@@ -1,7 +1,7 @@
 # OC-BrewingManager
 A brewing stand manager for OpenComputers.
 
-_This is still in beta_, the blaze powder must be put manually into the brewing stand and there's no signal when the glass bottle chest is empty.
+_This is still in beta_, the development of this program has been recorded and is available [here](https://www.youtube.com/playlist?list=PL9cj77VEpeVjrO1bD_XB3UWzpfhflTbxk) in French
 
 # Computers configurations
 
